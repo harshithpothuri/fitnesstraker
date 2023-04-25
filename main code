@@ -1,0 +1,146 @@
+#include <Wire.h>
+#include <MPU6050.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <BlynkSimpleEsp32.h> // Blynk library for ESP32
+
+// WiFi credentials
+const char* ssid = "vivo15";
+const char* password = "7032136890";
+
+// Blynk auth token
+char auth[] = "your-auth-token"; // Replace with your Blynk auth token
+
+// MPU6050 sensor
+MPU6050 mpu;
+float lastAz, lastGy;
+
+// Exercise counts
+int situpCount = 0;
+int pushupCount = 0;
+int armCircleCount = 0;
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+  mpu.initialize();
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi!");
+  
+  Blynk.begin(auth, ssid, password); // Initialize Blynk
+}
+
+void loop() {
+  // Read sensor data
+  int16_t ax, ay, az, gx, gy, gz;
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+
+  // Check for sit-up (acceleration above threshold)
+  if (abs(az - lastAz) > 2000) {
+    if (detectSitup(ax, ay)) {
+      situpCount++;
+      Serial.println("Sit-up detected!");
+    }
+  }
+
+  // Check for push-up (shoulder movement)
+  if (abs(gy - lastGy) > 2000) {
+    if (detectPushup(ay, az)) {
+      pushupCount++;
+      Serial.println("Push-up detected!");
+    }
+  }
+
+  // Check for arm circle (angular speed above threshold)
+  if (abs(gy - lastGy) > 500) {
+    if (detectArmCircle(gx, gy, gz)) {
+      armCircleCount++;
+      Serial.println("Arm circle detected!");
+    }
+  }
+
+  // Update previous values
+  lastAz = az;
+  lastGy = gy;
+
+  // Send data to Blynk every 10 seconds
+  if (millis() % 10000 == 0) {
+    sendDataToBlynk();
+  }
+
+  // Print data to serial monitor
+  Serial.print("Sit-ups: ");
+  Serial.print(situpCount);
+  Serial.print(", Push-ups: ");
+  Serial.print(pushupCount);
+  Serial.print(", Arm circles: ");
+  Serial.println(armCircleCount);
+  
+  Blynk.run(); // Run Blynk
+}
+
+bool detectSitup(float ax, float ay) {
+  // Threshold for acceleration values
+  const int situpThreshold = 4000;
+
+  // Simple neural network to detect sit-ups
+  float output = 0.2*ax + 0.3*ay - 1000;
+  
+  // Return true only if output is greater than 0 and acceleration values exceed the threshold
+  return output > 0 && abs(ax) > situpThreshold && abs(ay) > situpThreshold;
+}
+
+
+
+bool detectPushup(float ay, float az) {
+  // Simple neural network to detect push-ups
+  const int pushupThreshold = 2000;
+  float output = -0.3*ay - 0.2*az + 1000;
+  
+  // Return true only if output is greater than 0 and acceleration values exceed the threshold
+  //return output > 0 && abs(ay) > pushupThreshold && abs(az
+ // Return true only if output is greater than 0 and acceleration values exceed the threshold
+  return output > 0 && abs(ay) > pushupThreshold && abs(az) > pushupThreshold;
+}
+
+bool detectArmCircle(float gx, float gy, float gz) {
+  static float avgGy = 0;
+  static int count = 0;
+  
+  // Calculate average angular velocity over 5 seconds
+  
+
+ if (count < 5000/20) { // assuming 20ms loop delay
+    avgGy += gy;
+    count++;
+  } else {
+    avgGy /= count;
+    float threshold = 2.0 * avgGy;
+    float output = 0.1*gx + 0.2*gy + 0.3*gz - threshold;
+    if (output > 0) {
+      return true;
+    }
+    // reset values for next arm circle exercise
+    avgGy = 0;
+    count = 0;
+  }
+  return false;
+}
+
+void sendDataToBlynk() {
+  // Send data to Blynk
+  Blynk.virtualWrite(V1, situpCount);
+  Blynk.virtualWrite(V2, pushupCount);
+  Blynk.virtualWrite(V3, armCircleCount);
+
+
+
+  // Disconnect from Blynk server
+  Blynk.disconnect();
+}
+
