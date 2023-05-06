@@ -1,15 +1,17 @@
 #include <Wire.h>
 #include <MPU6050.h>
 #include <WiFi.h>
+#include <ThingSpeak.h>
 #include <HTTPClient.h>
-#include <BlynkSimpleEsp32.h> // Blynk library for ESP32
-
 // WiFi credentials
-const char* ssid = "vivo15";
-const char* password = "7032136890";
+const char* ssid = "ssid";
+const char* password = "password";
 
-// Blynk auth token
-char auth[] = "your-auth-token"; // Replace with your Blynk auth token
+// ThingSpeak server details and API key
+unsigned long channelId = xxxxxxxxx;
+const char* apiKey = "xxxxxxxxxxxxxxx";
+//const char* server = "api.thingspeak.com";
+const char* serverUrl = "https://api.thingspeak.com";
 
 // MPU6050 sensor
 MPU6050 mpu;
@@ -31,8 +33,10 @@ void setup() {
     Serial.println("Connecting to WiFi...");
   }
   Serial.println("Connected to WiFi!");
-  
-  Blynk.begin(auth, ssid, password); // Initialize Blynk
+WiFiClient client;
+//ThingSpeak.begin(client);
+
+  ThingSpeak.begin(client); // Initialize ThingSpeak library
 }
 
 void loop() {
@@ -68,9 +72,9 @@ void loop() {
   lastAz = az;
   lastGy = gy;
 
-  // Send data to Blynk every 10 seconds
-  if (millis() % 10000 == 0) {
-    sendDataToBlynk();
+  // Send data to ThingSpeak every 10 seconds
+  if (millis() % 1000 == 0) {
+    sendDataToThingSpeak();
   }
 
   // Print data to serial monitor
@@ -80,9 +84,8 @@ void loop() {
   Serial.print(pushupCount);
   Serial.print(", Arm circles: ");
   Serial.println(armCircleCount);
-  
-  Blynk.run(); // Run Blynk
 }
+
 
 bool detectSitup(float ax, float ay) {
   // Threshold for acceleration values
@@ -95,27 +98,22 @@ bool detectSitup(float ax, float ay) {
   return output > 0 && abs(ax) > situpThreshold && abs(ay) > situpThreshold;
 }
 
-
-
 bool detectPushup(float ay, float az) {
-  // Simple neural network to detect push-ups
+  // Threshold for acceleration values
   const int pushupThreshold = 2000;
+
+  // Simple neural network to detect push-ups
   float output = -0.3*ay - 0.2*az + 1000;
-  
+
   // Return true only if output is greater than 0 and acceleration values exceed the threshold
-  //return output > 0 && abs(ay) > pushupThreshold && abs(az
- // Return true only if output is greater than 0 and acceleration values exceed the threshold
   return output > 0 && abs(ay) > pushupThreshold && abs(az) > pushupThreshold;
 }
-
 bool detectArmCircle(float gx, float gy, float gz) {
   static float avgGy = 0;
   static int count = 0;
   
   // Calculate average angular velocity over 5 seconds
-  
-
- if (count < 5000/20) { // assuming 20ms loop delay
+  if (count < 5000/20) { // assuming 20ms loop delay
     avgGy += gy;
     count++;
   } else {
@@ -131,16 +129,31 @@ bool detectArmCircle(float gx, float gy, float gz) {
   }
   return false;
 }
+void sendDataToThingSpeak() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected");
+    return;
+  }
 
-void sendDataToBlynk() {
-  // Send data to Blynk
-  Blynk.virtualWrite(V1, situpCount);
-  Blynk.virtualWrite(V2, pushupCount);
-  Blynk.virtualWrite(V3, armCircleCount);
+  // create an HTTPClient object
+  HTTPClient http;
 
+  // set the ThingSpeak server URL and API key
+  String url = String(serverUrl) + "/update?api_key=" + String(apiKey) + "&field1=" + String(situpCount) + "&field2=" + String(pushupCount) + "&field3=" + String(armCircleCount);
+  http.begin(url);
 
+  // make the request to ThingSpeak
+  int httpCode = http.GET();
+  String payload = http.getString();
 
-  // Disconnect from Blynk server
-  Blynk.disconnect();
+  // print the response from ThingSpeak
+  Serial.print("HTTP response code: ");
+  Serial.println(httpCode);
+  Serial.print("Payload: ");
+  Serial.println(payload);
+
+  // close the connection
+  http.end();
 }
+
 
